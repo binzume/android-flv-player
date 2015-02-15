@@ -1,13 +1,13 @@
-# FLV Player for Android(�����p)
+# FLV Player for Android(実験用)
 
-flv��MediaCodec�ōĐ�����D
+flvをMediaCodecで再生するテストアプリ．
 
-�[���W���̃f�R�[�_���g���̂ŃR���p�N�g���n�[�h�E�F�A�f�R�[�_�����p�ł��܂��D
+端末標準のデコーダを使うのでコンパクト＆ハードウェアデコーダが活用できます．
 
-- �����F mp3,aac
-- �f��: H.264/AVC
+- 音声： mp3,aac
+- 映像: H.264/AVC
 
-h.263���T�|�[�g�\��ł����CSorenson H.263�̈������߂�ǂ��D
+h.263もサポート予定ですが，Sorenson H.263の扱いがめんどい．
 
 ## License
 
