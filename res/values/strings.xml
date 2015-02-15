@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">FlvPlayer</string>
+    <string name="hello_world">Tap to play().</string>
+    <string name="action_settings">Settings</string>
+
+</resources>
