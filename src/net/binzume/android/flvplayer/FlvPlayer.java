@@ -64,13 +64,9 @@ public class FlvPlayer {
 		ByteBuffer[] audioCodecInputBuffers = null;
 		ByteBuffer[] audioCodecOutputBuffers = null;
 
-		MediaCodec videoCodec = MediaCodec.createDecoderByType("video/avc"); // H.263:video/3gpp
-		MediaFormat vformat = MediaFormat.createVideoFormat("video/avc", 1280, 720);
-		vformat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 655360);
-		videoCodec.configure(vformat, surface, null, 0);
-		videoCodec.start();
-		ByteBuffer[] videoCodecInputBuffers = videoCodec.getInputBuffers();
-		ByteBuffer[] videoCodecOutputBuffers = videoCodec.getOutputBuffers();
+		MediaCodec videoCodec = null;
+		ByteBuffer[] videoCodecInputBuffers = null;
+		ByteBuffer[] videoCodecOutputBuffers = null;
 
 		BufferInfo outputBufferInfo = new BufferInfo();
 
@@ -96,6 +92,35 @@ public class FlvPlayer {
 					videoCodecType = "video/3gpp";
 					// buf.array()[3] &= 0x80; // h263 : clear version bit
 					// TODO: fix picture data
+					BitStream bs = new BitStream(buf.array());
+					bs.readbits(8);
+					bs.readbits(22);
+					int tr = bs.readbits(8);
+					int psize = bs.readbits(3);
+					int ptype = bs.readbits(2);
+					int df = bs.readbits(1);
+					int q = bs.readbits(5);
+					Log.d(TAG, "sorenson_h263 p " + tr + ",sz:" + psize + ",p:" + ptype + ",df:" + df + ",q:" + q);
+					while (bs.readbits(1) == 1) {
+						int ext = bs.readbits(8);
+						Log.d(TAG, "sorenson_h263 ext:" + ext);
+					}
+					// buf = ByteBuffer.allocate(655360);
+					BitStream bs2 = new BitStream(buf.array());
+					bs2.writebits(0, 8); // dummy
+					bs2.writebits(0b0000_0000_0000_0000_1_00000, 22); // dummy
+					bs2.writebits(tr, 8);
+
+					int ptype263 = 0b10000_011_0_0000 | ((ptype == 0 ? 1 : 0) << 4);
+					bs2.writebits(ptype263, 13);
+
+					bs2.writebits(q, 5); // PQUANT
+
+					bs2.writebits(0, 1); // CPM
+
+					bs2.writebits(0, 1); // PEI
+					bs2.write(bs, dataSize * 8 - bs.pos);
+
 				} else if (videoFormat == FlvTag.CODEC_VIDEO_AVC) {
 					videoCodecType = "video/avc";
 					byte frameType = buf.array()[1];
@@ -115,7 +140,6 @@ public class FlvPlayer {
 						buf.position(8 + 4 + csd0sz + 4);
 						byte[] cds1 = new byte[csd1sz];
 						buf.get(cds1);
-						Log.d(TAG, "video csd1:" + cds1[2] + "," + cds1[3]);
 						buf.position(8 + 4 + csd0sz + 1);
 						buf.putInt(1);
 						buf.put(cds1);
@@ -139,9 +163,24 @@ public class FlvPlayer {
 				} else {
 					videoCodecType = "video/???";
 				}
+
 				boolean keyFrame = tag.isVideoKeyframe();
 
 				Log.d(TAG, "video: " + videoCodecType + " " + buf.array()[1] + "(h:" + header + " k:" + keyFrame);
+
+				if (videoFormat != FlvTag.CODEC_VIDEO_AVC && videoFormat != FlvTag.CODEC_VIDEO_H263)
+					continue;
+
+				if (videoCodec == null) {
+					Log.d(TAG, "video: init videoCodec.");
+					videoCodec = MediaCodec.createDecoderByType(videoCodecType);
+					MediaFormat vformat = MediaFormat.createVideoFormat(videoCodecType, 1280, 720);
+					vformat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 655360);
+					videoCodec.configure(vformat, surface, null, 0);
+					videoCodec.start();
+					videoCodecInputBuffers = videoCodec.getInputBuffers();
+					videoCodecOutputBuffers = videoCodec.getOutputBuffers();
+				}
 
 				int inputBufIndex = videoCodec.dequeueInputBuffer(10000);
 				if (inputBufIndex < 0) {
@@ -155,33 +194,31 @@ public class FlvPlayer {
 				videoCodec.queueInputBuffer(inputBufIndex, 0, dataSize - 1 - ofs, timestamp * 1000, header ? MediaCodec.BUFFER_FLAG_CODEC_CONFIG
 						: (keyFrame ? MediaCodec.BUFFER_FLAG_SYNC_FRAME : 0));
 
-				if (surface == null || true) {
-					int outputBufIndex = videoCodec.dequeueOutputBuffer(outputBufferInfo, 1000);
-					if (outputBufIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
-						videoCodecOutputBuffers = videoCodec.getOutputBuffers();
-						outputBufIndex = videoCodec.dequeueOutputBuffer(outputBufferInfo, 1000);
-					}
-					if (outputBufIndex >= 0) {
-						/*
-						// debug..
-						ByteBuffer obuf = videoCodecOutputBuffers[outputBufIndex];
-						Log.d(TAG, "video size: " + outputBufferInfo.size);
-						if (obuf != null) {
-							if (surface != null) {
-								Canvas c = surface.lockCanvas(null);
-								int w = 352 * 2;
-								int h = 240 * 2;
-								int[] pixbuf = new int[w*h];
-								obuf.asIntBuffer().get(pixbuf);
-								//c.drawColor(Color.RED);
-								c.drawBitmap(pixbuf, 0, w, 0, 0, w, h, false, new Paint());
-								surface.unlockCanvasAndPost(c);
-							}
+				int outputBufIndex = videoCodec.dequeueOutputBuffer(outputBufferInfo, 1000);
+				if (outputBufIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+					videoCodecOutputBuffers = videoCodec.getOutputBuffers();
+					outputBufIndex = videoCodec.dequeueOutputBuffer(outputBufferInfo, 1000);
+				}
+				if (outputBufIndex >= 0) {
+					/*
+					// debug..
+					ByteBuffer obuf = videoCodecOutputBuffers[outputBufIndex];
+					Log.d(TAG, "video size: " + outputBufferInfo.size);
+					if (obuf != null) {
+						if (surface != null) {
+							Canvas c = surface.lockCanvas(null);
+							int w = 352 * 2;
+							int h = 240 * 2;
+							int[] pixbuf = new int[w*h];
+							obuf.asIntBuffer().get(pixbuf);
+							//c.drawColor(Color.RED);
+							c.drawBitmap(pixbuf, 0, w, 0, 0, w, h, false, new Paint());
+							surface.unlockCanvasAndPost(c);
 						}
-						*/
-
-						videoCodec.releaseOutputBuffer(outputBufIndex, surface != null);
 					}
+					*/
+
+					videoCodec.releaseOutputBuffer(outputBufIndex, surface != null);
 				}
 
 			}
@@ -199,6 +236,7 @@ public class FlvPlayer {
 				}
 
 				if (audioCodec == null) {
+					Log.d(TAG, "audio: init audioCodec.");
 					int freq = tag.getAudioFreq();
 					audioCodec = MediaCodec.createDecoderByType(audioCodecType);
 					MediaFormat format = MediaFormat.createAudioFormat(audioCodecType, freq, tag.getAudioChannels());
@@ -259,5 +297,4 @@ public class FlvPlayer {
 
 		Log.d(TAG, "play() finish");
 	}
-
 }

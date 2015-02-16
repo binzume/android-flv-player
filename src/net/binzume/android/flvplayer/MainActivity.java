@@ -21,6 +21,8 @@ public class MainActivity extends Activity implements SurfaceTextureListener {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
+		
+		getActionBar().hide();
 
 		final String flvPath;
 		Uri data = getIntent().getData();
