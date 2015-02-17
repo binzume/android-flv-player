@@ -100,27 +100,33 @@ public class FlvPlayer {
 					int ptype = bs.readbits(2);
 					int df = bs.readbits(1);
 					int q = bs.readbits(5);
-					Log.d(TAG, "sorenson_h263 p " + tr + ",sz:" + psize + ",p:" + ptype + ",df:" + df + ",q:" + q);
-					while (bs.readbits(1) == 1) {
-						int ext = bs.readbits(8);
-						Log.d(TAG, "sorenson_h263 ext:" + ext);
-					}
+					Log.d(TAG, "sorenson_h263 pic tr:" + tr + ",sz:" + psize + ",p:" + ptype + ",df:" + df + ",q:" + q);
+					// if (ptype != 0 ) continue;
+
 					// buf = ByteBuffer.allocate(655360);
 					BitStream bs2 = new BitStream(buf.array());
 					bs2.writebits(0, 8); // dummy
 					bs2.writebits(0b0000_0000_0000_0000_1_00000, 22); // dummy
 					bs2.writebits(tr, 8);
 
-					int ptype263 = 0b10000_011_0_0000 | ((ptype == 0 ? 1 : 0) << 4);
+					int ptype263 = 0b10000_011_0_0000 | ((ptype == 0 ? 0 : 1) << 4);
 					bs2.writebits(ptype263, 13);
 
 					bs2.writebits(q, 5); // PQUANT
 
 					bs2.writebits(0, 1); // CPM
 
+					while (bs.readbits(1) == 1) {
+						bs2.writebits(1, 1); // PEI
+						int ext = bs.readbits(8);
+						bs2.writebits(ext, 8); // ??
+						Log.d(TAG, "sorenson_h263 ext:" + ext);
+					}
+
 					bs2.writebits(0, 1); // PEI
 					bs2.write(bs, dataSize * 8 - bs.pos);
-
+					bs2.alignByte();
+					dataSize = bs2.pos / 8;
 				} else if (videoFormat == FlvTag.CODEC_VIDEO_AVC) {
 					videoCodecType = "video/avc";
 					byte frameType = buf.array()[1];
